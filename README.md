@@ -40,5 +40,5 @@ $ mkdir -p repo/com/alibaba/otter/client-adapter.common/$CANAL_VERSION
 $ cp canal.adapter-$CANAL_VERSION/lib/client-adapter.common-$CANAL_VERSION.jar \
   repo/com/alibaba/otter/client-adapter.common/$CANAL_VERSION/
 $ mvn clean package
-$ cp target/client-adapter.phoenix-1.1.3-jar-with-dependencies.jar canal.adapter-$CANAL_VERSION/plugin/
+$ cp target/client-adapter.phoenix-$CANAL_VERSION-jar-with-dependencies.jar canal.adapter-$CANAL_VERSION/plugin/
 ```
