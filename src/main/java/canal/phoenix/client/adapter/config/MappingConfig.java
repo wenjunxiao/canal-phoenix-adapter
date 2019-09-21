@@ -2,6 +2,7 @@ package canal.phoenix.client.adapter.config;
 
 import org.apache.commons.lang.StringUtils;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -198,6 +199,9 @@ public class MappingConfig {
         }
 
         public List<String> getExcludeColumns() {
+            if (excludeColumns == null) {
+                excludeColumns = new ArrayList<>();
+            }
             return excludeColumns;
         }
 
