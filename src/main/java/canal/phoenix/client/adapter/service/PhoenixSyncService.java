@@ -198,7 +198,11 @@ public class PhoenixSyncService {
                 return false;
             } else {
                 // DML
-                for (MappingConfig config : configMap.values()) {
+                for (Map.Entry<String, MappingConfig> entry : configMap.entrySet()) {
+                    MappingConfig config = entry.getValue();
+                    if (config.isDebug()) {
+                        logger.info("DML: {} {}", entry.getKey(), JSON.toJSONString(dml, SerializerFeature.WriteMapNullValue));
+                    }
                     if (config.getConcurrent()) {
                         List<SingleDml> singleDmls = SingleDml.dml2SingleDmls(dml);
                         singleDmls.forEach(singleDml -> {
@@ -239,9 +243,8 @@ public class PhoenixSyncService {
                     delete(batchExecutor, config, dml);
                 } else if (type != null && type.equalsIgnoreCase("TRUNCATE")) {
                     truncate(batchExecutor, config);
-                }
-                if (logger.isDebugEnabled()) {
-                    logger.debug("DML: {}", JSON.toJSONString(dml, SerializerFeature.WriteMapNullValue));
+                } else if (logger.isInfoEnabled()){
+                    logger.info("SingleDml: {}", JSON.toJSONString(dml, SerializerFeature.WriteMapNullValue));
                 }
             } catch (SQLException e) {
                 logger.error("sync error: " + e.getMessage(), e);
@@ -251,6 +254,9 @@ public class PhoenixSyncService {
     }
 
     private void alter(BatchExecutor batchExecutor, MappingConfig config, Dml dml, List<SQLStatement> stmtList, String configFile) throws SQLException {
+        if (config.isDebug()) {
+            logger.info("DML: {} {}", configFile, JSON.toJSONString(dml, SerializerFeature.WriteMapNullValue));
+        }
         DbMapping dbMapping = config.getDbMapping();
         if (!dbMapping.isAlter()) {
             logger.info("not alterable table: {} {}", dml.getTable(), configFile);
@@ -270,31 +276,40 @@ public class PhoenixSyncService {
             if (statement instanceof SQLAlterTableStatement) {
                 SQLAlterTableStatement alterTable = (SQLAlterTableStatement) statement;
                 for (SQLAlterTableItem item : alterTable.getItems()) {
-                    if (item instanceof SQLAlterTableDropColumnItem && dbMapping.isDrop()) {
+                    if (item instanceof SQLAlterTableDropColumnItem) {
                         SQLAlterTableDropColumnItem dropColumnItem = (SQLAlterTableDropColumnItem) item;
+                        if (!dbMapping.isDrop()) {
+                            logger.info("drop table column disabled: {} {}", targetTable, dropColumnItem.getColumns());
+                            continue;
+                        }
                         for (SQLName sqlName : dropColumnItem.getColumns()) {
                             String name = Util.cleanColumn(sqlName.getSimpleName());
                             String sql = "ALTER TABLE " + targetTable + " DROP COLUMN IF EXISTS " +
-                                    columnsMap1.getOrDefault(name, name);
+                                    dbMapping.escape(columnsMap1.getOrDefault(name, name));
                             try {
                                 logger.info("drop table column: {} {}", sql, batchExecutor.executeUpdate(sql));
+                                dbMapping.removeTargetColumn(name);
                             } catch (Exception e) {
                                 logger.warn("drop table column error: " + sql, e);
                             }
                         }
-                    } else if (item instanceof SQLAlterTableAddColumn && dbMapping.getMapAll()) {
+                    } else if (item instanceof SQLAlterTableAddColumn) {
                         SQLAlterTableAddColumn addColumn = (SQLAlterTableAddColumn) item;
+                        if (!dbMapping.getMapAll()) {
+                            logger.info("add table column disabled: {} {}", targetTable, addColumn.getColumns());
+                            continue;
+                        }
                         for (SQLColumnDefinition definition : addColumn.getColumns()) {
                             String name = Util.cleanColumn(definition.getNameAsString());
                             if (dbMapping.getExcludeColumns().contains(name)) {
                                 continue;
                             }
-                            dbMapping.addTargetColumn(name, name);
                             String sql = "ALTER TABLE " + targetTable +
                                     " ADD IF NOT EXISTS " +
-                                    name + " " + TypeUtil.getPhoenixType(definition, dbMapping.isLimit());
+                                    dbMapping.escape(name) + " " + TypeUtil.getPhoenixType(definition, dbMapping.isLimit());
                             try {
                                 logger.info("add table column: {} {}", sql, batchExecutor.executeUpdate(sql));
+                                dbMapping.addTargetColumn(name, name);
                                 if (definition.getDefaultExpr() != null) {
                                     String defVal = definition.getDefaultExpr().toString();
                                     if (!defVal.equalsIgnoreCase("NULL") && !defVal.equalsIgnoreCase("NOT NULL") && name.length() > 0) {
@@ -316,14 +331,14 @@ public class PhoenixSyncService {
             Set<Map.Entry<String, String>> pkSet = dbMapping.getTargetPk().entrySet();
             Set<Map.Entry<String, String>> defSet = defValues.entrySet();
             for (Map.Entry<String, String> entry : pkSet) {
-                defSql.append(entry.getKey()).append(",");
+                defSql.append(dbMapping.escape(entry.getKey())).append(",");
             }
             for (Map.Entry<String, String> entry : defSet) {
-                defSql.append(entry.getKey()).append(",");
+                defSql.append(dbMapping.escape(entry.getKey())).append(",");
             }
             defSql.deleteCharAt(defSql.length() - 1).append(") SELECT ");
             for (Map.Entry<String, String> entry : pkSet) {
-                defSql.append(entry.getKey()).append(",");
+                defSql.append(dbMapping.escape(entry.getKey())).append(",");
             }
             for (Map.Entry<String, String> entry : defSet) {
                 defSql.append(entry.getValue()).append(",");
@@ -353,7 +368,6 @@ public class PhoenixSyncService {
         }
 
         DbMapping dbMapping = config.getDbMapping();
-
         Map<String, String> columnsMap = SyncUtil.getColumnsMap(dbMapping, data);
 
         StringBuilder insertSql = new StringBuilder();
@@ -385,7 +399,7 @@ public class PhoenixSyncService {
                     throw new RuntimeException("Target column: " + targetColumnName + " not matched");
                 }
             }
-            insertSql.append(targetColumnName).append(",");
+            insertSql.append(dbMapping.escape(targetColumnName)).append(",");
             Object value = data.get(srcColumnName);
             BatchExecutor.setValue(values, type, value);
         }
@@ -413,7 +427,7 @@ public class PhoenixSyncService {
                     }
                     Integer type = ctype.get(Util.cleanColumn(targetColumnName).toLowerCase());
                     if (type != null) {
-                        deleteSql.append(targetColumnName).append("=? AND ");
+                        deleteSql.append(dbMapping.escape(targetColumnName)).append("=? AND ");
                         // 如果有修改主键的情况
                         if (old.containsKey(srcColumnName)) {
                             keyChanged = true;
@@ -424,12 +438,18 @@ public class PhoenixSyncService {
                     }
                 }
                 if (keyChanged) {
+                    if (config.isDebug()) {
+                        logger.info("insert into table: {} {}", deleteSql, delValues);
+                    }
                     batchExecutor.execute(deleteSql.toString(), delValues);
                 }
             }
+            if (config.isDebug()) {
+                logger.info("insert into table: {} {}", insertSql, values);
+            }
             batchExecutor.execute(insertSql.toString(), values);
         } catch (SQLException | RuntimeException e) {
-            logger.warn("Insert into target table, sql: {}", insertSql, e);
+            logger.warn("Insert into target table, sql: {} {}", insertSql, values ,e);
             throw e;
         }
         if (logger.isTraceEnabled()) {
@@ -459,9 +479,14 @@ public class PhoenixSyncService {
         List<Map<String, ?>> values = new ArrayList<>();
         // 拼接主键
         appendCondition(dbMapping, sql, ctype, values, data);
-        batchExecutor.execute(sql.toString(), values);
-        if (logger.isTraceEnabled()) {
-            logger.trace("Delete from target table, sql: {}", sql);
+        try {
+            batchExecutor.execute(sql.toString(), values);
+            if (logger.isTraceEnabled()) {
+                logger.trace("Delete from target table, sql: {}", sql);
+            }
+        } catch (SQLException e) {
+            logger.warn("Delete from target error, sql: {} {}", sql, values);
+            throw e;
         }
     }
 
@@ -549,7 +574,7 @@ public class PhoenixSyncService {
             if (srcColumnName == null) {
                 srcColumnName = Util.cleanColumn(targetColumnName);
             }
-            sql.append(targetColumnName).append("=? AND ");
+            sql.append(dbMapping.escape(targetColumnName)).append("=? AND ");
             Integer type = ctype.get(Util.cleanColumn(targetColumnName).toLowerCase());
             if (type == null) {
                 throw new RuntimeException("Target column: " + targetColumnName + " not matched");

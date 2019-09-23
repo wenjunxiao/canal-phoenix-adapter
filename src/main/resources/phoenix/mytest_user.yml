@@ -7,6 +7,7 @@ dbMapping:
   database: mytest
   table: user
   targetTable: mytest2.user
+  escapeUpper: true  # 字段默认大写，并用双引号引起来
   targetPk:
     id: id
   mapAll: true  # 映射所有字段(默认true，不包含排除的字段)
