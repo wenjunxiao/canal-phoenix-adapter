@@ -30,7 +30,7 @@ public class TypeUtil {
         SQLDataTypeImpl sqlDataType1 = sqlDataType instanceof SQLDataTypeImpl ? (SQLDataTypeImpl)sqlDataType : null;
         boolean isUnsigned = sqlDataType1 != null && sqlDataType1.isUnsigned();
 
-        return getPhoenixType(sqlDataType.getName(), sqlDataType.getArguments().toArray(), isUnsigned, limit);
+        return getPhoenixType(sqlDataType.getName().toUpperCase(), sqlDataType.getArguments().toArray(), isUnsigned, limit);
     }
 
     public static String getPhoenixType(String name, Object[] args, boolean isUnsigned, boolean limit) {

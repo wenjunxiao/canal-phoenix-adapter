@@ -87,7 +87,7 @@ public class PhoenixEtlService {
             }
             StringBuilder missing = new StringBuilder();
             StringBuilder constraint = new StringBuilder();
-            Util.sqlRS(srcDS, "SELECT * FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = '" + dbMapping.getDatabase() + "'  AND TABLE_NAME = '" + dbMapping.getTable() + "'", rs -> {
+            Util.sqlRS(srcDS, "SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '" + dbMapping.getDatabase() + "'  AND TABLE_NAME = '" + dbMapping.getTable() + "'", rs -> {
                 try {
                     List<String> excludeColumns = config.getDbMapping().getExcludeColumns();
                     while (rs.next()) {
@@ -97,7 +97,7 @@ public class PhoenixEtlService {
                         if (targetColumnType.get(lower) == null && !excludeColumns.contains(lower)) {
                             boolean isPri = rs.getString("COLUMN_KEY").equals("PRI");
                             String[] args = splitNotEmpty(colType.replaceAll("^\\w+(?:\\(([^)]*)\\))?[\\s\\S]*$", "$1"));
-                            missing.append(name).append(" ").append(TypeUtil.getPhoenixType(
+                            missing.append(dbMapping.escape(name)).append(" ").append(TypeUtil.getPhoenixType(
                                     rs.getString("DATA_TYPE").toUpperCase(),
                                     args,
                                     colType.contains("unsigned"),
@@ -107,7 +107,7 @@ public class PhoenixEtlService {
                                 if (args.length > 0 && dbMapping.isLimit() || rs.getString("IS_NULLABLE").equals("NO")) {
                                     missing.append(" NOT NULL");
                                 }
-                                constraint.append(name).append(',');
+                                constraint.append(dbMapping.escape(name)).append(',');
                             }
                             missing.append(',');
                         }
@@ -287,11 +287,14 @@ public class PhoenixEtlService {
                     ResultSetMetaData rsd = rs.getMetaData();
                     int columnCount = rsd.getColumnCount();
                     List<String> columns = new ArrayList<>();
+                    List<String> excludeColumns = dbMapping.getExcludeColumns();
                     for (int i = 1; i <= columnCount; i++) {
-                        columnType.put(rsd.getColumnName(i).toLowerCase(), rsd.getColumnType(i));
-                        columns.add(rsd.getColumnName(i));
+                        String lower = rsd.getColumnName(i).toLowerCase();
+                        if (!excludeColumns.contains(lower)) {
+                            columnType.put(lower, rsd.getColumnType(i));
+                            columns.add(lower);
+                        }
                     }
-
                     columnsMap.putAll(SyncUtil.getColumnsMap(dbMapping, columns));
                     return true;
                 } catch (Exception e) {
@@ -314,7 +317,7 @@ public class PhoenixEtlService {
                     StringBuilder insertSql = new StringBuilder();
                     insertSql.append("UPSERT INTO ").append(SyncUtil.getDbTableName(dbMapping)).append(" (");
                     columnsMap
-                            .forEach((targetColumnName, srcColumnName) -> insertSql.append(targetColumnName).append(","));
+                            .forEach((targetColumnName, srcColumnName) -> insertSql.append(dbMapping.escape(targetColumnName)).append(","));
 
                     int len = insertSql.length();
                     insertSql.delete(len - 1, len).append(") VALUES (");
@@ -357,15 +360,18 @@ public class PhoenixEtlService {
 
                                 Integer type = columnType.get(targetClolumnName.toLowerCase());
 
-                                Object value = rs.getObject(srcColumnName);
-                                insertValues.put(srcColumnName, value);
-                                if (value != null) {
-                                    logger.error("DEBUG: " + srcColumnName + ":" + type + ":" + value);
-                                    SyncUtil.setPStmt(type, pstmt, value, i);
-                                } else {
+                                try {
+                                    Object value = rs.getObject(srcColumnName);
+                                    insertValues.put(srcColumnName, value);
+                                    if (value != null) {
+                                        SyncUtil.setPStmt(type, pstmt, value, i);
+                                    } else {
+                                        pstmt.setNull(i, type);
+                                    }
+                                } catch (SQLException e) {
+                                    insertValues.put(srcColumnName, null);
                                     pstmt.setNull(i, type);
                                 }
-
                                 i++;
                             }
                             if (debug) {
@@ -417,7 +423,7 @@ public class PhoenixEtlService {
             if (srcColumnName == null) {
                 srcColumnName = targetColumnName;
             }
-            sql.append(targetColumnName).append("=? AND ");
+            sql.append(dbMapping.escape(targetColumnName)).append("=? AND ");
             values.put(targetColumnName, rs.getObject(srcColumnName));
         }
         int len = sql.length();

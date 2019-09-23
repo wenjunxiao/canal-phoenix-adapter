@@ -16,6 +16,7 @@ public class MappingConfig {
     private String outerAdapterKey;         // 对应适配器的key
     private boolean concurrent = false;     // 是否并行同步
     private DbMapping dbMapping;            // db映射配置
+    private boolean debug = false;          // 调试
 
     public String getDataSourceKey() {
         return dataSourceKey;
@@ -65,6 +66,14 @@ public class MappingConfig {
         this.destination = destination;
     }
 
+    public boolean isDebug() {
+        return debug;
+    }
+
+    public void setDebug(boolean debug) {
+        this.debug = debug;
+    }
+
     public void validate() {
         if (dbMapping.database == null || dbMapping.database.isEmpty()) {
             throw new NullPointerException("dbMapping.database");
@@ -87,6 +96,7 @@ public class MappingConfig {
         private boolean drop = false;                       // 是否允许删除字段
         private boolean limit = false;                      // 是否限制字段长度
         private boolean skipMissing = false;                // 是否跳过丢失的字段
+        private boolean escapeUpper = true;                 // 字段默认大写加双引号
         private String targetDb;                            // 目标库名
         private String targetTable;                         // 目标表名
         private Map<String, String> targetColumns;          // 目标表字段映射
@@ -95,6 +105,14 @@ public class MappingConfig {
         private int readBatch = 5000;
         private int commitBatch = 5000;                     // etl等批量提交大小
         private Map<String, String> allMapColumns;
+
+        public String escape(String name) {
+            if (escapeUpper) {
+                return "\"" + name.toUpperCase() + "\"";
+            } else {
+                return name;
+            }
+        }
 
         public String getDatabase() {
             return database;
@@ -160,6 +178,14 @@ public class MappingConfig {
             this.skipMissing = skipMissing;
         }
 
+        public boolean isEscapeUpper() {
+            return escapeUpper;
+        }
+
+        public void setEscapeUpper(boolean escapeUpper) {
+            this.escapeUpper = escapeUpper;
+        }
+
         public String getTargetDb() {
             return targetDb;
         }
@@ -194,7 +220,22 @@ public class MappingConfig {
         }
 
         public void addTargetColumn(String key, String value) {
+            if (targetColumns == null) {
+                targetColumns = new HashMap<>();
+            }
             targetColumns.put(key, value);
+            if (allMapColumns != null) {
+                allMapColumns.put(key, value);
+            }
+        }
+
+        public void removeTargetColumn(String key) {
+            if (targetColumns != null) {
+                targetColumns.remove(key);
+            }
+            if (allMapColumns != null) {
+                allMapColumns.remove(key);
+            }
         }
 
         public List<String> getExcludeColumns() {
