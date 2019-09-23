@@ -2,10 +2,7 @@ package canal.phoenix.client.adapter.config;
 
 import org.apache.commons.lang.StringUtils;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Phoenix表映射配置
@@ -186,6 +183,8 @@ public class MappingConfig {
                         targetColumns.put(key, key);
                     }
                 });
+            } else {
+                targetColumns = new HashMap<>();
             }
             return targetColumns;
         }
