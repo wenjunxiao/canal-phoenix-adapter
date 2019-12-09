@@ -18,6 +18,7 @@ public class MappingConfig {
     private boolean concurrent = false;     // 是否并行同步
     private DbMapping dbMapping;            // db映射配置
     private boolean debug = false;          // 调试
+    private String notifyUrl;               // 通知URL
 
     public String getDataSourceKey() {
         return dataSourceKey;
@@ -73,6 +74,14 @@ public class MappingConfig {
 
     public void setDebug(boolean debug) {
         this.debug = debug;
+    }
+
+    public String getNotifyUrl() {
+        return notifyUrl;
+    }
+
+    public void setNotifyUrl(String notifyUrl) {
+        this.notifyUrl = notifyUrl;
     }
 
     public void validate() {

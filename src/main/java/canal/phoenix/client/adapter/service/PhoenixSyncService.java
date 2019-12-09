@@ -270,6 +270,7 @@ public class PhoenixSyncService {
             columnsMap1.put(entry.getValue(), entry.getKey());
         }
 
+        boolean changed = false;
         String targetTable = SyncUtil.getDbTableName(dbMapping);
         Map<String, String> defValues = new HashMap<>();
         for (SQLStatement statement : stmtList) {
@@ -288,6 +289,7 @@ public class PhoenixSyncService {
                                     dbMapping.escape(columnsMap1.getOrDefault(name, name));
                             try {
                                 logger.info("drop table column: {} {}", sql, batchExecutor.executeUpdate(sql));
+                                changed = true;
                                 dbMapping.removeTargetColumn(name);
                             } catch (Exception e) {
                                 logger.warn("drop table column error: " + sql, e);
@@ -309,6 +311,7 @@ public class PhoenixSyncService {
                                     dbMapping.escape(name) + " " + TypeUtil.getPhoenixType(definition, dbMapping.isLimit());
                             try {
                                 logger.info("add table column: {} {}", sql, batchExecutor.executeUpdate(sql));
+                                changed = true;
                                 dbMapping.addTargetColumn(name, name);
                                 if (definition.getDefaultExpr() != null) {
                                     String defVal = definition.getDefaultExpr().toString();
@@ -324,6 +327,9 @@ public class PhoenixSyncService {
                     }
                 }
             }
+        }
+        if (changed) {
+            PhoenixEtlService.notify(config);
         }
         if (!defValues.isEmpty()) {
             StringBuilder defSql = new StringBuilder();
