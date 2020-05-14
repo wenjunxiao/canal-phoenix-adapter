@@ -377,9 +377,13 @@ public class PhoenixSyncService {
         Map<String, String> columnsMap = SyncUtil.getColumnsMap(dbMapping, data);
 
         StringBuilder insertSql = new StringBuilder();
-        insertSql.append("UPSERT INTO ").append(SyncUtil.getDbTableName(dbMapping)).append(" (");
+        String tableName = SyncUtil.getDbTableName(dbMapping);
+        insertSql.append("UPSERT INTO ").append(tableName).append(" (");
 
         Map<String, Integer> ctype = getTargetColumnType(batchExecutor.getConn(), config);
+        if (logger.isTraceEnabled()) {
+            logger.trace("table column types: {} {} {}", tableName, ctype, dbMapping.getEnumColumns());
+        }
 
         int mapLen = columnsMap.size();
         List<Map<String, ?>> values = new ArrayList<>();
@@ -406,7 +410,7 @@ public class PhoenixSyncService {
                 }
             }
             insertSql.append(dbMapping.escape(targetColumnName)).append(",");
-            Object value = data.get(srcColumnName);
+            Object value = dbMapping.checkColumnValue(data.get(srcColumnName), srcColumnName);
             BatchExecutor.setValue(values, type, value);
         }
 
@@ -437,9 +441,9 @@ public class PhoenixSyncService {
                         // 如果有修改主键的情况
                         if (old.containsKey(srcColumnName)) {
                             keyChanged = true;
-                            BatchExecutor.setValue(delValues, type, old.get(srcColumnName));
+                            BatchExecutor.setValue(delValues, type, dbMapping.checkColumnValue(old.get(srcColumnName), srcColumnName));
                         } else {
-                            BatchExecutor.setValue(delValues, type, data.get(srcColumnName));
+                            BatchExecutor.setValue(delValues, type, dbMapping.checkColumnValue(data.get(srcColumnName), srcColumnName));
                         }
                     }
                 }
@@ -457,9 +461,6 @@ public class PhoenixSyncService {
         } catch (SQLException | RuntimeException e) {
             logger.warn("Insert into target table, sql: {} {}", insertSql, values ,e);
             throw e;
-        }
-        if (logger.isTraceEnabled()) {
-            logger.trace("Insert into target table, sql: {}", insertSql);
         }
     }
 
@@ -585,7 +586,7 @@ public class PhoenixSyncService {
             if (type == null) {
                 throw new RuntimeException("Target column: " + targetColumnName + " not matched");
             }
-            BatchExecutor.setValue(values, type, d.get(srcColumnName));
+            BatchExecutor.setValue(values, type, dbMapping.checkColumnValue(d.get(srcColumnName), srcColumnName));
         }
         int len = sql.length();
         sql.delete(len - 4, len);

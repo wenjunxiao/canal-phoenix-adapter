@@ -17,6 +17,10 @@ dbMapping:
   skipMissing: false
   limit: false
   excludeColumns:
+  enumColumns:
+    column1:
+      - enum1
+      - enum2
 ```
 * `mapAll` Map all mysql columns to phoenix table, except the column in `excludeColumns`
 * `alter` Allow modify the phoenix table schema, if `mapAll` is true, then sync the newly added columns;
@@ -27,6 +31,7 @@ and allow to add columns(`mapAll` is true and `alter` is true), it will add miss
 firstly, and then insert/update the value.
 * `limit` Whether it is consistent with the mysql field definition. If false, it will add
 column with precision and scale.
+* `enumColumns` enum column mapping
 
 ## Compile
 

@@ -114,7 +114,7 @@ public class PhoenixEtlService {
                         String name = rs.getString("COLUMN_NAME");
                         String colType = rs.getString("COLUMN_TYPE");
                         String colDef = rs.getString("COLUMN_DEFAULT");
-                        if (targetColumnType.get(name) == null && !excludeColumns.contains(name) && !excludeColumns.contains(name.toLowerCase())) {
+                        if (targetColumnType.get(name.toLowerCase()) == null && !excludeColumns.contains(name) && !excludeColumns.contains(name.toLowerCase())) {
                             boolean isPri = rs.getString("COLUMN_KEY").equals("PRI");
                             String[] args = splitNotEmpty(colType.replaceAll("^\\w+(?:\\(([^)]*)\\))?[\\s\\S]*$", "$1"));
                             missing.append(dbMapping.escape(name)).append(" ").append(TypeUtil.getPhoenixType(
@@ -187,8 +187,8 @@ public class PhoenixEtlService {
         }
 
         // 设置参数到请求对象中
-        StringEntity stringEntity = new StringEntity(JSON.toJSONString(data), ContentType.APPLICATION_JSON);
-        stringEntity.setContentEncoding("utf-8");
+        String reqData = JSON.toJSONString(data);
+        StringEntity stringEntity = new StringEntity(reqData, ContentType.APPLICATION_JSON);
         httpPost.setEntity(stringEntity);
 
         httpClient.start();
@@ -196,7 +196,7 @@ public class PhoenixEtlService {
             @Override
             public void completed(HttpResponse httpResponse) {
                 try {
-                    logger.info("notify done => {} {}", config.getNotifyUrl(), EntityUtils.toString(httpResponse.getEntity(), "UTF-8"));
+                    logger.info("notify done => {} {} {}", config.getNotifyUrl(), reqData, EntityUtils.toString(httpResponse.getEntity(), "UTF-8"));
                 } catch (IOException e) {
                     logger.error("parse notify result error", e);
                 }
