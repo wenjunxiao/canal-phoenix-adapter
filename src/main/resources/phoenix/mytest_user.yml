@@ -3,6 +3,7 @@ destination: example
 groupId: g1
 outerAdapterKey: phoenix1
 concurrent: true
+#notifyUrl: http://url/of/table/changed/listener
 dbMapping:
   database: mytest
   table: user

@@ -10,6 +10,7 @@ Put table mapping file to `conf/phoenix`. Sample config file [mytest_user.yml](s
 Most of the configuration is the same as rdb, but there are some special configurations to control the synchronization of table schema.
 
 ```yaml
+notifyUrl: http://url/of/table/changed/listener
 dbMapping:
   mapAll: true
   alter: true
@@ -22,6 +23,8 @@ dbMapping:
       - enum1
       - enum2
 ```
+* `notifyUrl` notify when phoenix table changed, `POST` data is `{"database":"","table":"""}`.
+It can also be placed in the `properties` property of `application.xml` in `canal.adapter`
 * `mapAll` Map all mysql columns to phoenix table, except the column in `excludeColumns`
 * `alter` Allow modify the phoenix table schema, if `mapAll` is true, then sync the newly added columns;
 if `drop` is true, then sync the newly deleted columns;
