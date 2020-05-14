@@ -4,14 +4,30 @@ import canal.phoenix.client.adapter.config.MappingConfig;
 import canal.phoenix.client.adapter.config.MappingConfig.DbMapping;
 import canal.phoenix.client.adapter.support.SyncUtil;
 import canal.phoenix.client.adapter.support.TypeUtil;
+import com.alibaba.fastjson.JSON;
 import com.alibaba.otter.canal.client.adapter.support.DatasourceConfig;
 import com.alibaba.otter.canal.client.adapter.support.EtlResult;
 import com.alibaba.otter.canal.client.adapter.support.Util;
 import com.google.common.base.Joiner;
+import com.google.common.base.Strings;
+import org.apache.commons.lang.StringUtils;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.concurrent.FutureCallback;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
+import org.apache.http.impl.nio.client.HttpAsyncClients;
+import org.apache.http.util.EntityUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
+import java.io.IOException;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
@@ -48,7 +64,9 @@ public class PhoenixEtlService {
             return false;
         }
         try {
-            return syncSchema(srcDataSource.getConnection(), targetDS, config);
+            try (Connection conn = srcDataSource.getConnection()) {
+                return syncSchema(conn, targetDS, config);
+            }
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -56,7 +74,9 @@ public class PhoenixEtlService {
 
     private static boolean syncSchema(DataSource srcDS, DataSource targetDS, MappingConfig config) {
         try {
-            return syncSchema(srcDS.getConnection(), targetDS.getConnection(), config);
+            try (Connection srcConn = srcDS.getConnection(); Connection targetConn = targetDS.getConnection()) {
+                return syncSchema(srcConn, targetConn, config);
+            }
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -92,9 +112,9 @@ public class PhoenixEtlService {
                     List<String> excludeColumns = config.getDbMapping().getExcludeColumns();
                     while (rs.next()) {
                         String name = rs.getString("COLUMN_NAME");
-                        String lower = name.toLowerCase();
                         String colType = rs.getString("COLUMN_TYPE");
-                        if (targetColumnType.get(lower) == null && !excludeColumns.contains(lower)) {
+                        String colDef = rs.getString("COLUMN_DEFAULT");
+                        if (targetColumnType.get(name.toLowerCase()) == null && !excludeColumns.contains(name) && !excludeColumns.contains(name.toLowerCase())) {
                             boolean isPri = rs.getString("COLUMN_KEY").equals("PRI");
                             String[] args = splitNotEmpty(colType.replaceAll("^\\w+(?:\\(([^)]*)\\))?[\\s\\S]*$", "$1"));
                             missing.append(dbMapping.escape(name)).append(" ").append(TypeUtil.getPhoenixType(
@@ -107,7 +127,12 @@ public class PhoenixEtlService {
                                 if (args.length > 0 && dbMapping.isLimit() || rs.getString("IS_NULLABLE").equals("NO")) {
                                     missing.append(" NOT NULL");
                                 }
+                                if (!Strings.isNullOrEmpty(colDef)) {
+                                    missing.append(" DEFAULT ").append(colDef);
+                                }
                                 constraint.append(dbMapping.escape(name)).append(',');
+                            } else if (dbMapping.getTargetPk() != null && dbMapping.getTargetPk().containsKey(name)) {
+                                constraint.append(dbMapping.escape(dbMapping.getTargetPk().get(name))).append(',');
                             }
                             missing.append(',');
                         }
@@ -131,9 +156,10 @@ public class PhoenixEtlService {
                     missing.deleteCharAt(missing.length() - 1);
                     sql = "ALTER TABLE " + targetTable + " ADD " + missing.toString();
                 }
-                logger.info("schema missing: {} {}", targetColumnType, sql);
+                logger.info("schema missing: {} {} {}", targetColumnType, sql, config.getDbMapping().getExcludeColumns());
                 try (PreparedStatement pstmt = targetDS.prepareStatement(sql)) {
                     pstmt.executeUpdate();
+                    notify(config);
                 } catch (SQLException e) {
                     logger.error("sync schema error: " + e.getMessage(), e);
                 }
@@ -143,6 +169,49 @@ public class PhoenixEtlService {
             return true;
         }
         return false;
+    }
+
+    public static void notify(MappingConfig config) {
+        if (StringUtils.isEmpty(config.getNotifyUrl())) return;
+        CloseableHttpAsyncClient httpClient = HttpAsyncClients.createDefault();
+        HttpPost httpPost = new HttpPost(config.getNotifyUrl());
+        Map<String, String> data = new HashMap<>();
+        DbMapping dbMapping = config.getDbMapping();
+        if (StringUtils.isNotEmpty(dbMapping.getTargetDb())) {
+            data.put("database", dbMapping.getTargetDb());
+            data.put("table", dbMapping.getTargetTable());
+        } else {
+            String[] names = dbMapping.getTargetTable().split("\\.");
+            data.put("database", names[0]);
+            data.put("table", names[1]);
+        }
+
+        // 设置参数到请求对象中
+        String reqData = JSON.toJSONString(data);
+        StringEntity stringEntity = new StringEntity(reqData, ContentType.APPLICATION_JSON);
+        httpPost.setEntity(stringEntity);
+
+        httpClient.start();
+        httpClient.execute(httpPost, new FutureCallback<HttpResponse>() {
+            @Override
+            public void completed(HttpResponse httpResponse) {
+                try {
+                    logger.info("notify done => {} {} {}", config.getNotifyUrl(), reqData, EntityUtils.toString(httpResponse.getEntity(), "UTF-8"));
+                } catch (IOException e) {
+                    logger.error("parse notify result error", e);
+                }
+            }
+
+            @Override
+            public void failed(Exception e) {
+                logger.warn("notify failed => {} {}", config.getNotifyUrl(), e);
+            }
+
+            @Override
+            public void cancelled() {
+                logger.info("notify cancelled =>", config.getNotifyUrl());
+            }
+        });
     }
 
     /**
@@ -191,6 +260,7 @@ public class PhoenixEtlService {
                 return count == null ? 0 : count;
             });
 
+            logger.info(dbMapping.getTable() + " etl start: " + cnt);
             // 当大于1万条记录时开启多线程
             if (cnt >= 10000) {
                 int threadCount = 3;
@@ -352,13 +422,13 @@ public class PhoenixEtlService {
                             Map<String, Object> insertValues = new HashMap<>();
                             int i = 1;
                             for (Map.Entry<String, String> entry : columnsMap.entrySet()) {
-                                String targetClolumnName = entry.getKey();
+                                String targetColumnName = entry.getKey();
                                 String srcColumnName = entry.getValue();
                                 if (srcColumnName == null) {
-                                    srcColumnName = targetClolumnName;
+                                    srcColumnName = targetColumnName;
                                 }
 
-                                Integer type = columnType.get(targetClolumnName.toLowerCase());
+                                Integer type = columnType.get(targetColumnName.toLowerCase());
 
                                 try {
                                     Object value = rs.getObject(srcColumnName);
@@ -375,7 +445,7 @@ public class PhoenixEtlService {
                                 i++;
                             }
                             if (debug) {
-                                logger.info("insert sql: {} {} {}", insertSql, insertValues, pstmt);
+                                logger.info("insert sql: {} {}", insertSql, insertValues);
                             }
 
                             pstmt.execute();

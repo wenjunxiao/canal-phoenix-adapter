@@ -20,3 +20,7 @@ dbMapping:
     name:
   excludeColumns: # 排除字段
     - password
+  enumColumns: # 枚举字段
+    gender:
+      - Male
+      - Female

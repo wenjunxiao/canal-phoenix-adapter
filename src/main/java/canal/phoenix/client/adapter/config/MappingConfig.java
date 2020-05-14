@@ -17,6 +17,7 @@ public class MappingConfig {
     private boolean concurrent = false;     // 是否并行同步
     private DbMapping dbMapping;            // db映射配置
     private boolean debug = false;          // 调试
+    private String notifyUrl;               // 通知URL
 
     public String getDataSourceKey() {
         return dataSourceKey;
@@ -74,6 +75,14 @@ public class MappingConfig {
         this.debug = debug;
     }
 
+    public String getNotifyUrl() {
+        return notifyUrl;
+    }
+
+    public void setNotifyUrl(String notifyUrl) {
+        this.notifyUrl = notifyUrl;
+    }
+
     public void validate() {
         if (dbMapping.database == null || dbMapping.database.isEmpty()) {
             throw new NullPointerException("dbMapping.database");
@@ -101,6 +110,7 @@ public class MappingConfig {
         private String targetTable;                         // 目标表名
         private Map<String, String> targetColumns;          // 目标表字段映射
         private List<String> excludeColumns;                // 不映射的字段
+        private Map<String, List<String>> enumColumns;      // 枚举的字段
         private String etlCondition;                        // etl条件sql
         private int readBatch = 5000;
         private int commitBatch = 5000;                     // etl等批量提交大小
@@ -247,6 +257,33 @@ public class MappingConfig {
 
         public void setExcludeColumns(List<String> excludeColumns) {
             this.excludeColumns = excludeColumns;
+        }
+
+        public Map<String, List<String>> getEnumColumns() {
+            if (enumColumns == null) {
+                enumColumns = new HashMap<>();
+            }
+            return enumColumns;
+        }
+
+        public void setEnumColumns(Map<String, List<String>> enumColumns) {
+            this.enumColumns = enumColumns;
+        }
+
+        public List<String> getColumnEnum(String column) {
+            return getEnumColumns().get(column);
+        }
+
+        public Object checkColumnValue(Object value, String column) {
+            List<String> enumList = getColumnEnum(column);
+            if (enumList != null) {
+                int i = Integer.valueOf(value.toString());
+                if (i > enumList.size() || i < 1) {
+                    return value;
+                }
+                return enumList.get(i - 1);
+            }
+            return value;
         }
 
         public String getEtlCondition() {

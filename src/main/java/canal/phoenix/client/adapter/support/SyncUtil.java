@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public class SyncUtil {
@@ -25,6 +26,7 @@ public class SyncUtil {
             if (dbMapping.getAllMapColumns() != null) {
                 return dbMapping.getAllMapColumns();
             }
+            List<String> excludes = dbMapping.getExcludeColumns();
             columnsMap = new LinkedHashMap<>();
             for (String srcColumn : columns) {
                 boolean flag = true;
@@ -37,7 +39,7 @@ public class SyncUtil {
                         }
                     }
                 }
-                if (flag && !dbMapping.getExcludeColumns().contains(srcColumn)) {
+                if (flag && !excludes.contains(srcColumn) && !excludes.contains(srcColumn.toLowerCase())) {
                     columnsMap.put(srcColumn, srcColumn);
                 }
             }
@@ -89,6 +91,8 @@ public class SyncUtil {
                     pstmt.setByte(i, ((Number) value).byteValue());
                 } else if (value instanceof String) {
                     pstmt.setByte(i, Byte.parseByte((String) value));
+                } else if (value instanceof Boolean) {
+                    pstmt.setByte(i, (byte) (((Boolean)value) ? 1 : 0));
                 } else {
                     pstmt.setNull(i, type);
                 }
