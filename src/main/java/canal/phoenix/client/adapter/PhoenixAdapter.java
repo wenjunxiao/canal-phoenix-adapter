@@ -60,6 +60,8 @@ public class PhoenixAdapter implements OuterAdapter {
     @Override
     public void init(OuterAdapterConfig configuration, Properties envProperties) {
         this.envProperties = envProperties;
+        // 初始化连接池
+        Map<String, String> properties = configuration.getProperties();
         Map<String, MappingConfig> phoenixMappingTmp = ConfigLoader.load(envProperties);
         // 过滤不匹配的key的配置
         phoenixMappingTmp.forEach((key, mappingConfig) -> {
@@ -75,7 +77,7 @@ public class PhoenixAdapter implements OuterAdapter {
         } else {
             logger.info("[{}]phoenix config mapping: {}", this, phoenixMapping.keySet());
         }
-
+        String notifyUrl = properties.get("notify.url");
         for (Map.Entry<String, MappingConfig> entry : phoenixMapping.entrySet()) {
             String configName = entry.getKey();
             MappingConfig mappingConfig = entry.getValue();
@@ -91,10 +93,11 @@ public class PhoenixAdapter implements OuterAdapter {
             Map<String, MappingConfig> configMap = mappingConfigCache.computeIfAbsent(key,
                     k1 -> new ConcurrentHashMap<>());
             configMap.put(configName, mappingConfig);
+            if (StringUtils.isEmpty(mappingConfig.getNotifyUrl()) && StringUtils.isNotEmpty(notifyUrl)) {
+                mappingConfig.setNotifyUrl(notifyUrl);
+            }
         }
 
-        // 初始化连接池
-        Map<String, String> properties = configuration.getProperties();
         dataSource = new DruidDataSource();
         dataSource.setDriverClassName(properties.get("jdbc.driverClassName"));
         dataSource.setUrl(properties.get("jdbc.url"));

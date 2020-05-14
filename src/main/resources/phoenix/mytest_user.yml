@@ -3,6 +3,7 @@ destination: example
 groupId: g1
 outerAdapterKey: phoenix1
 concurrent: true
+#notifyUrl: http://url/of/table/changed/listener
 dbMapping:
   database: mytest
   table: user
@@ -20,3 +21,7 @@ dbMapping:
     name:
   excludeColumns: # 排除字段
     - password
+  enumColumns: # 枚举字段
+    gender:
+      - Male
+      - Female
